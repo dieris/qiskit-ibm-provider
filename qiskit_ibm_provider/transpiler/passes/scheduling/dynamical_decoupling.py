@@ -121,6 +121,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         insert_multiple_cycles: bool = False,
         coupling_map: CouplingMap = None,
         alt_spacings: Optional[Union[List[List[float]], List[float]]] = None,
+        include_clean_qubits: bool = False,
     ):
         """Dynamical decoupling initializer.
 
@@ -173,6 +174,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
             alt_spacings: A list of lists of spacings between the DD gates, for the second subcircuit,
                 as determined by the coupling map. If None, a balanced spacing that is staggered with
                 respect to the first subcircuit will be used [d, d, d, ..., d, d, 0].
+            include_clean_qubits: Apply DD regardless of whether the qubit is dirty or not
         Raises:
             TranspilerError: When invalid DD sequence is specified.
             TranspilerError: When pulse gate with the duration which is
@@ -195,6 +197,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         self._alignment = pulse_alignment
         self._coupling_map = coupling_map
         self._coupling_coloring = None
+        self._include_clean_qubits = include_clean_qubits
 
         if spacings is not None:
             try:
@@ -413,7 +416,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         ):
             self._dirty_qubits.remove(qubit)
 
-        if qubit not in self._dirty_qubits:
+        if not self._include_clean_qubits and qubit not in self._dirty_qubits:
             # Previous node is the start edge or reset, i.e. qubit is ground state.
             self._apply_scheduled_op(
                 block_idx, t_start, Delay(time_interval, self._block_dag.unit), qubit
