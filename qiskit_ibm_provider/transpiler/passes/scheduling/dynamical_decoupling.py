@@ -560,9 +560,8 @@ class PadDynamicalDecoupling(BlockBasePadder):
                     idle_after += gate_length
                     dd_ind += 1
 
-            self._block_dag.set_global_phase(
+            self._block_dag.global_phase =
                 self._block_dag.global_phase + sequence_gphase
-            )
             return
 
         # DD could not be applied, delay instead
