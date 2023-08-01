@@ -563,8 +563,10 @@ class PadDynamicalDecoupling(BlockBasePadder):
             self._block_dag.global_phase = (
                 self._block_dag.global_phase + sequence_gphase
             )
-            if not isinstance(self._global_phase, ParameterExpression):
-                self._block_dag.global_phase = self._mod_2pi(self._global_phase)
+            if not isinstance(self._block_dag.global_phase, ParameterExpression):
+                self._block_dag.global_phase = self._mod_2pi(
+                    self.block_dag._global_phase
+                )
             return
 
         # DD could not be applied, delay instead
