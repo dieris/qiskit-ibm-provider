@@ -27,13 +27,14 @@ from qiskit_ibm_provider.api.exceptions import RequestsApiError
 
 from qiskit_ibm_provider.job.ibm_job import IBMJob
 from qiskit_ibm_provider.ibm_backend import IBMBackend
-from qiskit_ibm_provider.ibm_backend_service import IBMBackendService
+from qiskit_ibm_provider.ibm_backend_service import IBMBackendService, PAGE_SIZE
 from qiskit_ibm_provider.ibm_provider import IBMProvider
 from ..account import temporary_account_config_file
 from ..decorators import (
     IntegrationTestDependencies,
     integration_test_setup,
     integration_test_setup_with_backend,
+    production_only,
 )
 from ..ibm_test_case import IBMTestCase
 
@@ -140,6 +141,7 @@ class TestIBMProviderHubGroupProject(IBMTestCase):
         )
         self.assertEqual(hgp.name, provider.active_account()["instance"])
 
+    @production_only
     def test_active_account_with_saved_instance(self):
         """Test active_account with a saved instance."""
         hgp = self.provider._get_hgp()
@@ -199,6 +201,56 @@ class TestIBMProviderServices(IBMTestCase):
         """Test getting a backend from the provider."""
         backend = self.dependencies.provider.get_backend(name=self.backend_name)
         self.assertEqual(backend.name, self.backend_name)
+
+    def test_get_backend_options(self):
+        """Test resetting backend options when calling get_backend."""
+        default_shots = 4000
+        backend1 = self.dependencies.provider.get_backend(name=self.backend_name)
+        self.assertEqual(backend1.options.shots, default_shots)
+        backend1.options.shots = 100
+        self.assertEqual(backend1.options.shots, 100)
+        backend2 = self.dependencies.provider.get_backend(name=self.backend_name)
+        # When getting a backend, it has the default options.
+        # backend1 and backend2 are the same instance.
+        self.assertEqual(backend2.options.shots, default_shots)
+        self.assertEqual(backend1.options.shots, default_shots)
+
+    def test_jobs_filter(self):
+        """Test limit filters when accessing jobs from the provider."""
+        num_jobs = PAGE_SIZE + 1
+        small_limit = PAGE_SIZE // 2
+        large_limit = PAGE_SIZE * 2
+        backend_name = self.backend_name
+        backend = self.dependencies.provider.get_backend(name=backend_name)
+        circuit = QuantumCircuit(1)
+        circuit.h(0)
+
+        start_time = datetime.now()
+        for _ in range(num_jobs):
+            backend.run(circuit, job_tags=["ibm-provider-test"], shots=1)
+        end_time = datetime.now()
+
+        recent_jobs_small_limit = self.dependencies.provider.jobs(
+            backend_name=backend_name,
+            limit=small_limit,
+            start_datetime=start_time,
+            end_datetime=end_time,
+        )
+        recent_jobs_large_limit = self.dependencies.provider.jobs(
+            backend_name=backend_name,
+            limit=large_limit,
+            start_datetime=start_time,
+            end_datetime=end_time,
+        )
+        recent_jobs_no_limit = self.dependencies.provider.jobs(
+            backend_name=backend_name,
+            limit=None,
+            start_datetime=start_time,
+            end_datetime=end_time,
+        )
+        self.assertEqual(len(recent_jobs_small_limit), small_limit)
+        self.assertEqual(len(recent_jobs_large_limit), num_jobs)
+        self.assertEqual(len(recent_jobs_no_limit), num_jobs)
 
     def test_backend_instance(self):
         """Test that the instance is saved correctly."""

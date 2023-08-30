@@ -24,7 +24,6 @@ from qiskit.compiler import transpile
 from qiskit.providers.jobstatus import JobStatus, JOB_FINAL_STATES
 from qiskit.test.reference_circuits import ReferenceCircuits
 
-from qiskit import IBMQ
 from qiskit_ibm_provider import IBMBackend
 from qiskit_ibm_provider.api.exceptions import RequestsApiError
 from qiskit_ibm_provider.api.rest.job import Job as RestJob
@@ -33,6 +32,7 @@ from qiskit_ibm_provider.job.exceptions import IBMJobTimeoutError
 from ..decorators import (
     IntegrationTestDependencies,
     integration_test_setup_with_backend,
+    production_only,
 )
 from ..fake_account_client import BaseFakeAccountClient, CancelableFakeJob
 from ..ibm_test_case import IBMTestCase
@@ -63,7 +63,6 @@ class TestIBMJob(IBMTestCase):
         cls.bell = transpile(ReferenceCircuits.bell(), cls.sim_backend)
         cls.sim_job = cls.sim_backend.run(cls.bell)
         cls.last_month = datetime.now() - timedelta(days=30)
-        cls.legacy_provider = IBMQ.enable_account(dependencies.token)
 
     def test_run_multiple_simulator(self):
         """Test running multiple jobs in a simulator."""
@@ -139,35 +138,6 @@ class TestIBMJob(IBMTestCase):
         for job in job_list:
             self.assertTrue(isinstance(job.job_id(), str))
 
-    def test_retrieve_legacy_jobs(self):
-        """Test retrieving legacy jobs."""
-        # run jobs from qiskit_ibmq_provider
-        backend_name = "ibmq_qasm_simulator"
-        backend = self.legacy_provider.get_backend(backend_name)
-        job1 = backend.run(ReferenceCircuits.bell())
-        job2 = backend.run(ReferenceCircuits.bell())
-        self.assertTrue(job1.result())
-        self.assertTrue(job2.result())
-
-        job_list = self.provider.backend.jobs(
-            backend_name=backend_name,
-            limit=5,
-            skip=0,
-        )
-        job_ids = [job.job_id() for job in job_list]
-        self.assertTrue(job1.job_id() in job_ids)
-        self.assertTrue(job2.job_id() in job_ids)
-
-    def test_retrieve_single_legacy_job(self):
-        """Test retrieving a single legacy job."""
-        # run job from qiskit_ibmq_provider
-        backend = self.legacy_provider.get_backend("ibmq_qasm_simulator")
-        job = backend.run(ReferenceCircuits.bell())
-
-        retrieved_job = self.provider.backend.retrieve_job(job.job_id())
-        self.assertEqual(job.job_id(), retrieved_job.job_id())
-        self.assertTrue(job.result())
-
     def test_retrieve_jobs_with_status(self):
         """Test retreiving jobs with status filter."""
         statuses = [["DONE"], JobStatus.DONE, [JobStatus.DONE]]
@@ -200,8 +170,10 @@ class TestIBMJob(IBMTestCase):
         for job in pending_job_list:
             self.assertTrue(job.status() in [JobStatus.QUEUED, JobStatus.RUNNING])
 
+    @production_only
     def test_retrieve_running_error_jobs(self):
         """Test client side filtering with running and error jobs."""
+        self.sim_job.wait_for_final_state()
         statuses = ["RUNNING", JobStatus.ERROR]
         job_list = self.provider.backend.jobs(
             backend_name=self.sim_backend.name, limit=3, status=statuses

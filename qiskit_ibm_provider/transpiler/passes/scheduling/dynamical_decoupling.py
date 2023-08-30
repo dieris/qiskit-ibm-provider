@@ -255,15 +255,12 @@ class PadDynamicalDecoupling(BlockBasePadder):
 
         if self._coupling_map:
             physical_qubits = [dag.qubits.index(q) for q in dag.qubits]
-            sub_coupling_map = self._coupling_map.reduce(physical_qubits)
-            self._coupling_coloring = rx.graph_greedy_color(
-                sub_coupling_map.graph.to_undirected()
-            )
-            chrom_n = max(self._coupling_coloring.values()) + 1
-            if chrom_n > 2:
+            subgraph = self._coupling_map.graph.subgraph(physical_qubits)
+            self._coupling_coloring = rx.graph_greedy_color(subgraph.to_undirected())
+            if any(c > 1 for c in self._coupling_coloring.values()):
                 raise TranspilerError(
-                    f"This circuit topology is not supported for staggered dynamical decoupling."
-                    f"Only two distinct lists of inter-pulse delays can be specified (spacings and alt_spacings), but {chrom_n} are required for this coupling map."
+                    "This circuit topology is not supported for staggered dynamical decoupling."
+                    "The maximum connectivity is 3 nearest neighbors per qubit."
                 )
 
         spacings_required = self._spacings is None
