@@ -331,7 +331,7 @@ class BlockBasePadder(TransformationPass):
             barrier_node.op.duration = 0
 
     def _visit_block(
-        self, block: DAGCircuit, wire_map: Dict[Qubit, Qubit], pad_wires: bool = True, ignore_idle: bool = False
+        self, block: DAGCircuit, wire_map: Dict[Qubit, Qubit], pad_wires: bool = True, ignore_idle: bool = False, control_flow: bool=False
     ) -> DAGCircuit:
         # Push the previous block dag onto the stack
         prev_node = self._prev_node
@@ -347,7 +347,7 @@ class BlockBasePadder(TransformationPass):
         self._conditional_block = False
 
         for node in block_order_op_nodes(block):
-            self._visit_node(node)
+            self._visit_node(node, control_flow=control_flow)
 
         # Terminate the block to pad it after scheduling.
         prev_block_duration = self._block_duration
@@ -367,7 +367,7 @@ class BlockBasePadder(TransformationPass):
 
         return new_block_dag
 
-    def _visit_node(self, node: DAGNode) -> None:
+    def _visit_node(self, node: DAGNode, control_flow:bool=False) -> None:
         if isinstance(node.op, ControlFlowOp):
             if isinstance(node.op, IfElseOp):
                 self._visit_if_else_op(node)
@@ -377,7 +377,7 @@ class BlockBasePadder(TransformationPass):
             if isinstance(node.op, Delay):
                 self._visit_delay(node)
             else:
-                self._visit_generic(node)
+                self._visit_generic(node, control_flow=control_flow)
         else:
             raise TranspilerError(
                 f"Operation {repr(node)} is likely added after the circuit is scheduled. "
@@ -456,9 +456,14 @@ class BlockBasePadder(TransformationPass):
                     block_dag.qubits + block_dag.clbits,
                 )
             }
+            # mark blocks as part of a control flow to selectively 
+            # apply DD on them using the control_flow_only option in
+            # PadDynamicalDecoupling
             new_node_block_dags.append(
                 self._visit_block(
-                    block_dag, pad_wires=not fast_path_node, wire_map=inner_wire_map, ignore_idle=True
+                    block_dag, pad_wires=not fast_path_node,
+                    wire_map=inner_wire_map, ignore_idle=True, 
+                    control_flow=True
                 )
             )
 
@@ -502,7 +507,7 @@ class BlockBasePadder(TransformationPass):
         t1 = t0 + self._get_node_duration(node)  # pylint: disable=invalid-name
         self._block_duration = max(self._block_duration, t1)
 
-    def _visit_generic(self, node: DAGNode) -> None:
+    def _visit_generic(self, node: DAGNode, control_flow:bool = False) -> None:
         """Visit a generic node to pad."""
         # Note: t0 is the relative time with respect to the current block specified
         # by block_idx.
@@ -539,6 +544,7 @@ class BlockBasePadder(TransformationPass):
                     t_end=t0,
                     next_node=node,
                     prev_node=prev_node,
+                    control_flow=control_flow
                 )
 
             self._idle_after[bit] = t1

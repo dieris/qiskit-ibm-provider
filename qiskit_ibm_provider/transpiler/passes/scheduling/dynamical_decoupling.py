@@ -122,7 +122,8 @@ class PadDynamicalDecoupling(BlockBasePadder):
         coupling_map: CouplingMap = None,
         alt_spacings: Optional[Union[List[List[float]], List[float]]] = None,
         schedule_idle_qubits: bool = False,
-        single_pulses: bool = False
+        single_pulses: bool = False,
+        control_flow_only: bool = False
     ):
         """Dynamical decoupling initializer.
 
@@ -179,6 +180,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
                 This is useful for timeline visualizations, but may cause issues
                 for execution on large backends.
             single_pulses: Set to true to allow for single echo pulses without inverting them into the nearest unitary.
+            control_flow_only: only apply DD to the control flow blocks
         Raises:
             TranspilerError: When invalid DD sequence is specified.
             TranspilerError: When pulse gate with the duration which is
@@ -202,6 +204,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         self._coupling_map = coupling_map
         self._coupling_coloring = None
         self._single_pulses = single_pulses
+        self._control_flow_only = control_flow_only
 
         if spacings is not None:
             try:
@@ -370,6 +373,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         t_end: int,
         next_node: DAGNode,
         prev_node: DAGNode,
+        control_flow: bool=False
     ) -> None:
         # This routine takes care of the pulse alignment constraint for the DD sequence.
         # Note that the alignment constraint acts on the t0 of the DAGOpNode.
@@ -417,8 +421,9 @@ class PadDynamicalDecoupling(BlockBasePadder):
         ):
             self._dirty_qubits.remove(qubit)
 
-        if qubit not in self._dirty_qubits:
-            # Previous node is the start edge or reset, i.e. qubit is ground state.
+        if qubit not in self._dirty_qubits or (self._control_flow_only and not control_flow):
+            # Previous node is the start edge or reset, i.e. qubit is ground state;
+            # or dd to be applied to control flow blocks only
             self._apply_scheduled_op(
                 block_idx, t_start, Delay(time_interval, self._block_dag.unit), qubit
             )
