@@ -222,7 +222,7 @@ class BlockBasePadder(TransformationPass):
         t_end: int,
         next_node: DAGNode,
         prev_node: DAGNode,
-        control_flow: bool = False,
+        enable_dd: bool = False,
     ) -> None:
         """Interleave instruction sequence in between two nodes.
 
@@ -343,7 +343,7 @@ class BlockBasePadder(TransformationPass):
         wire_map: Dict[Qubit, Qubit],
         pad_wires: bool = True,
         ignore_idle: bool = False,
-        control_flow: bool = False,
+        enable_dd: bool = False,
     ) -> DAGCircuit:
         # Push the previous block dag onto the stack
         prev_node = self._prev_node
@@ -359,13 +359,26 @@ class BlockBasePadder(TransformationPass):
         self._conditional_block = False
 
         for node in block_order_op_nodes(block):
-            self._visit_node(node, control_flow=control_flow)
+            enable_dd_node = enable_dd
+            if isinstance(node.op, Barrier):
+                # skip DD on delay if next node after a barrier is also a delay
+                next_node = next(block.successors(node), None)
+                if (
+                    next_node is not None
+                    and hasattr(next_node, "op")
+                    and isinstance(next_node.op, Delay)
+                ):
+                    enable_dd_node = False
+
+            self._visit_node(
+                node, enable_dd=enable_dd_node
+            )  # this will always enable it. Always disable if False
 
         # Terminate the block to pad it after scheduling.
         prev_block_duration = self._block_duration
         prev_block_idx = self._current_block_idx
         self._terminate_block(
-            self._block_duration, self._current_block_idx, control_flow=control_flow
+            self._block_duration, self._current_block_idx, enable_dd=enable_dd
         )
 
         # Edge-case: Add a barrier if the final node is a fast-path
@@ -381,7 +394,7 @@ class BlockBasePadder(TransformationPass):
 
         return new_block_dag
 
-    def _visit_node(self, node: DAGNode, control_flow: bool = False) -> None:
+    def _visit_node(self, node: DAGNode, enable_dd: bool = False) -> None:
         if isinstance(node.op, ControlFlowOp):
             if isinstance(node.op, IfElseOp):
                 self._visit_if_else_op(node)
@@ -389,9 +402,9 @@ class BlockBasePadder(TransformationPass):
                 self._visit_control_flow_op(node)
         elif node in self._node_start_time:
             if isinstance(node.op, Delay):
-                self._visit_delay(node, control_flow=control_flow)
+                self._visit_delay(node, enable_dd=enable_dd)
             else:
-                self._visit_generic(node, control_flow=control_flow)
+                self._visit_generic(node, enable_dd=enable_dd)
         else:
             raise TranspilerError(
                 f"Operation {repr(node)} is likely added after the circuit is scheduled. "
@@ -479,7 +492,7 @@ class BlockBasePadder(TransformationPass):
                     pad_wires=not fast_path_node,
                     wire_map=inner_wire_map,
                     ignore_idle=True,
-                    control_flow=True,
+                    enable_dd=True,
                 )
             )
 
@@ -507,7 +520,7 @@ class BlockBasePadder(TransformationPass):
             self._map_wires(node.cargs),
         )
 
-    def _visit_delay(self, node: DAGNode, control_flow: bool = False) -> None:
+    def _visit_delay(self, node: DAGNode, enable_dd: bool = False) -> None:
         """The padding class considers a delay instruction as idle time
         rather than instruction. Delay node is not added so that
         we can extract non-delay predecessors.
@@ -516,7 +529,7 @@ class BlockBasePadder(TransformationPass):
         # Trigger the end of a block
         if block_idx > self._current_block_idx:
             self._terminate_block(
-                self._block_duration, self._current_block_idx, control_flow=control_flow
+                self._block_duration, self._current_block_idx, enable_dd=enable_dd
             )
             self._add_block_terminating_barrier(block_idx, t0, node)
 
@@ -527,7 +540,7 @@ class BlockBasePadder(TransformationPass):
         t1 = t0 + self._get_node_duration(node)  # pylint: disable=invalid-name
         self._block_duration = max(self._block_duration, t1)
 
-    def _visit_generic(self, node: DAGNode, control_flow: bool = False) -> None:
+    def _visit_generic(self, node: DAGNode, enable_dd: bool = False) -> None:
         """Visit a generic node to pad."""
         # Note: t0 is the relative time with respect to the current block specified
         # by block_idx.
@@ -557,6 +570,7 @@ class BlockBasePadder(TransformationPass):
                 prev_node = next(
                     self._block_dag.predecessors(self._block_dag.output_map[bit])
                 )
+
                 self._pad(
                     block_idx=block_idx,
                     qubit=bit,
@@ -564,7 +578,7 @@ class BlockBasePadder(TransformationPass):
                     t_end=t0,
                     next_node=node,
                     prev_node=prev_node,
-                    control_flow=control_flow,
+                    enable_dd=enable_dd,
                 )
 
             self._idle_after[bit] = t1
@@ -587,18 +601,18 @@ class BlockBasePadder(TransformationPass):
         )
 
     def _terminate_block(
-        self, block_duration: int, block_idx: int, control_flow: bool = False
+        self, block_duration: int, block_idx: int, enable_dd: bool = False
     ) -> None:
         """Terminate the end of a block scheduling region."""
         # Update all other qubits as not idle so that delays are *not*
         # inserted. This is because we need the delays to be inserted in
         # the conditional circuit block.
         self._block_duration = 0
-        self._pad_until_block_end(block_duration, block_idx, control_flow=control_flow)
+        self._pad_until_block_end(block_duration, block_idx, enable_dd=enable_dd)
         self._idle_after = {bit: 0 for bit in self._block_dag.qubits}
 
     def _pad_until_block_end(
-        self, block_duration: int, block_idx: int, control_flow: bool = False
+        self, block_duration: int, block_idx: int, enable_dd: bool = False
     ) -> None:
         # Add delays until the end of circuit.
         for bit in self._block_dag.qubits:
@@ -615,7 +629,7 @@ class BlockBasePadder(TransformationPass):
                     t_end=block_duration,
                     next_node=node,
                     prev_node=prev_node,
-                    control_flow=control_flow,
+                    enable_dd=enable_dd,
                 )
 
     def _apply_scheduled_op(

@@ -373,7 +373,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         t_end: int,
         next_node: DAGNode,
         prev_node: DAGNode,
-        control_flow: bool=False
+        enable_dd: bool=False
     ) -> None:
         # This routine takes care of the pulse alignment constraint for the DD sequence.
         # Note that the alignment constraint acts on the t0 of the DAGOpNode.
@@ -421,7 +421,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         ):
             self._dirty_qubits.remove(qubit)
 
-        if qubit not in self._dirty_qubits or (self._control_flow_only and not control_flow):
+        if qubit not in self._dirty_qubits or (self._control_flow_only and not enable_dd):
             # Previous node is the start edge or reset, i.e. qubit is ground state;
             # or dd to be applied to control flow blocks only
             self._apply_scheduled_op(
