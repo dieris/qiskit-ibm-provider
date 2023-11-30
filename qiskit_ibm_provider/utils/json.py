@@ -37,6 +37,13 @@ try:
 except ImportError:
     HAS_SCIPY = False
 
+try:
+    import qiskit_aer
+
+    HAS_AER = True
+except ImportError:
+    HAS_AER = False
+
 from qiskit.circuit import (
     Instruction,
     Parameter,
@@ -47,6 +54,7 @@ from qiskit.circuit import (
 )
 from qiskit.result import Result
 from qiskit.version import __version__ as _terra_version_string
+from qiskit.qpy import load
 
 from ..qpy import (
     _write_parameter,
@@ -55,7 +63,6 @@ from ..qpy import (
     _read_parameter_expression_v3,
     _read_parameter,
     dump,
-    load,
 )
 
 
@@ -203,6 +210,8 @@ class RuntimeEncoder(json.JSONEncoder):
                 return {"__type__": "ndarray", "__value__": obj.tolist()}
             value = _serialize_and_encode(obj, np.save, allow_pickle=False)
             return {"__type__": "ndarray", "__value__": value}
+        if isinstance(obj, np.int64):
+            return obj.item()
         if isinstance(obj, np.number):
             # Maybe we should encode the numpy data type here for better accuracy.
             return {"__type__": type(obj.item()).__name__, "__value__": obj.item()}
@@ -244,6 +253,8 @@ class RuntimeEncoder(json.JSONEncoder):
                 serializer=lambda buff, data: dump(data, buff),  # type: ignore[no-untyped-call]
             )
             return {"__type__": "Instruction", "__value__": value}
+        if HAS_AER and isinstance(obj, qiskit_aer.noise.NoiseModel):
+            return {"__type__": "NoiseModel", "__value__": obj.to_dict()}
         if hasattr(obj, "settings"):
             return {
                 "__type__": "settings",
@@ -325,5 +336,10 @@ class RuntimeDecoder(json.JSONDecoder):
             if obj_type == "spmatrix":
                 return _decode_and_deserialize(obj_val, scipy.sparse.load_npz, False)
             if obj_type == "to_json":
+                return obj_val
+            if obj_type == "NoiseModel":
+                if HAS_AER:
+                    return qiskit_aer.noise.NoiseModel.from_dict(obj_val)
+                warnings.warn("Qiskit Aer is needed to restore noise model.")
                 return obj_val
         return obj
