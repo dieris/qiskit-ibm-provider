@@ -62,7 +62,7 @@ class BlockBasePadder(TransformationPass):
     which may result in violation of hardware alignment constraints.
     """
 
-    def __init__(self, schedule_idle_qubits: bool = False, schedule_idle_qubits: bool = False) -> None:
+    def __init__(self, schedule_idle_qubits: bool = False) -> None:
         self._node_start_time = None
         self._node_block_dags = None
         self._idle_after: Optional[Dict[Qubit, int]] = None
