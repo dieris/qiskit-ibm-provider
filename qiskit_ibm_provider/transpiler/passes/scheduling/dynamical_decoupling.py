@@ -123,7 +123,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         alt_spacings: Optional[Union[List[List[float]], List[float]]] = None,
         schedule_idle_qubits: bool = False,
         single_pulses: bool = False,
-        control_flow_only: bool = False
+        dd_barrier: bool = False
     ):
         """Dynamical decoupling initializer.
 
@@ -204,7 +204,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         self._coupling_map = coupling_map
         self._coupling_coloring = None
         self._single_pulses = single_pulses
-        self._control_flow_only = control_flow_only
+        self._dd_barrier = dd_barrier
 
         if spacings is not None:
             try:
@@ -427,9 +427,9 @@ class PadDynamicalDecoupling(BlockBasePadder):
         ):
             self._dirty_qubits.remove(qubit)
 
-        if qubit not in self._dirty_qubits or (self._control_flow_only and not enable_dd):
+        if qubit not in self._dirty_qubits or (self._dd_barrier and not enable_dd):
             # Previous node is the start edge or reset, i.e. qubit is ground state;
-            # or dd to be applied to control flow blocks only
+            # or dd to be applied after named barrier only
             self._apply_scheduled_op(
                 block_idx, t_start, Delay(time_interval, self._block_dag.unit), qubit
             )

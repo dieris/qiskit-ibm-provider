@@ -28,7 +28,7 @@ from qiskit.circuit.library import Barrier
 from qiskit.circuit.delay import Delay
 from qiskit.circuit.parameterexpression import ParameterExpression
 from qiskit.converters import dag_to_circuit
-from qiskit.dagcircuit import DAGCircuit, DAGNode
+from qiskit.dagcircuit import DAGCircuit, DAGNode, DAGOpNode
 from qiskit.transpiler.basepasses import TransformationPass
 from qiskit.transpiler.exceptions import TranspilerError
 
@@ -359,26 +359,24 @@ class BlockBasePadder(TransformationPass):
         self._conditional_block = False
 
         for node in block_order_op_nodes(block):
-            enable_dd_node = enable_dd
-            if isinstance(node.op, Barrier):
-                # skip DD on delay if next node after a barrier is also a delay
-                next_node = next(block.successors(node), None)
-                if (
-                    next_node is not None
-                    and hasattr(next_node, "op")
-                    and isinstance(next_node.op, Delay)
-                ):
-                    enable_dd_node = False
+            enable_dd_node = False
+            # add DD if predecessor is a named barrier
+            if (
+                isinstance(node, DAGOpNode)
+                and isinstance(node.op, Barrier)
+                and node.op.label and 'dd' in node.op.label
+            ):
+                enable_dd_node = True
 
             self._visit_node(
                 node, enable_dd=enable_dd_node
-            )  # this will always enable it. Always disable if False
+            )  
 
         # Terminate the block to pad it after scheduling.
         prev_block_duration = self._block_duration
         prev_block_idx = self._current_block_idx
         self._terminate_block(
-            self._block_duration, self._current_block_idx, enable_dd=enable_dd
+            self._block_duration, self._current_block_idx
         )
 
         # Edge-case: Add a barrier if the final node is a fast-path
@@ -399,7 +397,7 @@ class BlockBasePadder(TransformationPass):
             if isinstance(node.op, IfElseOp):
                 self._visit_if_else_op(node)
             else:
-                self._visit_control_flow_op(node)
+                self._visit_control_flow_op(node, enable_dd=enable_dd)
         elif node in self._node_start_time:
             if isinstance(node.op, Delay):
                 self._visit_delay(node, enable_dd=enable_dd)
@@ -453,7 +451,7 @@ class BlockBasePadder(TransformationPass):
                 return False
         return True
 
-    def _visit_control_flow_op(self, node: DAGNode) -> None:
+    def _visit_control_flow_op(self, node: DAGNode, enable_dd: bool) -> None:
         """Visit a control-flow node to pad."""
 
         # Control-flow terminator ends scheduling of block currently
@@ -483,16 +481,12 @@ class BlockBasePadder(TransformationPass):
                     block_dag.qubits + block_dag.clbits,
                 )
             }
-            # mark blocks as part of a control flow to selectively
-            # apply DD on them using the control_flow_only option in
-            # PadDynamicalDecoupling
             new_node_block_dags.append(
                 self._visit_block(
                     block_dag,
                     pad_wires=not fast_path_node,
                     wire_map=inner_wire_map,
-                    ignore_idle=True,
-                    enable_dd=True,
+                    ignore_idle=True
                 )
             )
 
@@ -570,7 +564,7 @@ class BlockBasePadder(TransformationPass):
                 prev_node = next(
                     self._block_dag.predecessors(self._block_dag.output_map[bit])
                 )
-
+                
                 self._pad(
                     block_idx=block_idx,
                     qubit=bit,
