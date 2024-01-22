@@ -343,7 +343,6 @@ class BlockBasePadder(TransformationPass):
         wire_map: Dict[Qubit, Qubit],
         pad_wires: bool = True,
         ignore_idle: bool = False,
-        enable_dd: bool = False,
     ) -> DAGCircuit:
         # Push the previous block dag onto the stack
         prev_node = self._prev_node
@@ -364,10 +363,10 @@ class BlockBasePadder(TransformationPass):
             if (
                 isinstance(node, DAGOpNode)
                 and isinstance(node.op, Barrier)
-                and node.op.label and 'dd' in node.op.label
+                and self._dd_barrier and node.op.label 
+                and self._dd_barrier in node.op.label
             ):
                 enable_dd_node = True
-
             self._visit_node(
                 node, enable_dd=enable_dd_node
             )  
@@ -397,10 +396,10 @@ class BlockBasePadder(TransformationPass):
             if isinstance(node.op, IfElseOp):
                 self._visit_if_else_op(node)
             else:
-                self._visit_control_flow_op(node, enable_dd=enable_dd)
+                self._visit_control_flow_op(node)
         elif node in self._node_start_time:
             if isinstance(node.op, Delay):
-                self._visit_delay(node, enable_dd=enable_dd)
+                self._visit_delay(node)
             else:
                 self._visit_generic(node, enable_dd=enable_dd)
         else:
@@ -451,7 +450,7 @@ class BlockBasePadder(TransformationPass):
                 return False
         return True
 
-    def _visit_control_flow_op(self, node: DAGNode, enable_dd: bool) -> None:
+    def _visit_control_flow_op(self, node: DAGNode) -> None:
         """Visit a control-flow node to pad."""
 
         # Control-flow terminator ends scheduling of block currently
@@ -514,7 +513,7 @@ class BlockBasePadder(TransformationPass):
             self._map_wires(node.cargs),
         )
 
-    def _visit_delay(self, node: DAGNode, enable_dd: bool = False) -> None:
+    def _visit_delay(self, node: DAGNode) -> None:
         """The padding class considers a delay instruction as idle time
         rather than instruction. Delay node is not added so that
         we can extract non-delay predecessors.
@@ -523,7 +522,7 @@ class BlockBasePadder(TransformationPass):
         # Trigger the end of a block
         if block_idx > self._current_block_idx:
             self._terminate_block(
-                self._block_duration, self._current_block_idx, enable_dd=enable_dd
+                self._block_duration, self._current_block_idx
             )
             self._add_block_terminating_barrier(block_idx, t0, node)
 
@@ -572,7 +571,7 @@ class BlockBasePadder(TransformationPass):
                     t_end=t0,
                     next_node=node,
                     prev_node=prev_node,
-                    enable_dd=enable_dd,
+                    enable_dd=enable_dd
                 )
 
             self._idle_after[bit] = t1
@@ -595,18 +594,18 @@ class BlockBasePadder(TransformationPass):
         )
 
     def _terminate_block(
-        self, block_duration: int, block_idx: int, enable_dd: bool = False
+        self, block_duration: int, block_idx: int
     ) -> None:
         """Terminate the end of a block scheduling region."""
         # Update all other qubits as not idle so that delays are *not*
         # inserted. This is because we need the delays to be inserted in
         # the conditional circuit block.
         self._block_duration = 0
-        self._pad_until_block_end(block_duration, block_idx, enable_dd=enable_dd)
+        self._pad_until_block_end(block_duration, block_idx)
         self._idle_after = {bit: 0 for bit in self._block_dag.qubits}
 
     def _pad_until_block_end(
-        self, block_duration: int, block_idx: int, enable_dd: bool = False
+        self, block_duration: int, block_idx: int
     ) -> None:
         # Add delays until the end of circuit.
         for bit in self._block_dag.qubits:
@@ -623,7 +622,6 @@ class BlockBasePadder(TransformationPass):
                     t_end=block_duration,
                     next_node=node,
                     prev_node=prev_node,
-                    enable_dd=enable_dd,
                 )
 
     def _apply_scheduled_op(

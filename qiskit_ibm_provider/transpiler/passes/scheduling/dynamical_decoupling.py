@@ -123,7 +123,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         alt_spacings: Optional[Union[List[List[float]], List[float]]] = None,
         schedule_idle_qubits: bool = False,
         single_pulses: bool = False,
-        dd_barrier: bool = False
+        dd_barrier: Optional[str] = None
     ):
         """Dynamical decoupling initializer.
 
@@ -180,7 +180,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
                 This is useful for timeline visualizations, but may cause issues
                 for execution on large backends.
             single_pulses: Set to true to allow for single echo pulses without inverting them into the nearest unitary.
-            control_flow_only: only apply DD to the control flow blocks
+            dd_barrier: only apply DD to delays terminating with a barrier whose label contains the specified string
         Raises:
             TranspilerError: When invalid DD sequence is specified.
             TranspilerError: When pulse gate with the duration which is
