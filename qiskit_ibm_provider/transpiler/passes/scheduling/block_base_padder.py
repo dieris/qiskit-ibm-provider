@@ -363,20 +363,17 @@ class BlockBasePadder(TransformationPass):
             if (
                 isinstance(node, DAGOpNode)
                 and isinstance(node.op, Barrier)
-                and self._dd_barrier and node.op.label 
+                and self._dd_barrier
+                and node.op.label
                 and self._dd_barrier in node.op.label
             ):
                 enable_dd_node = True
-            self._visit_node(
-                node, enable_dd=enable_dd_node
-            )  
+            self._visit_node(node, enable_dd=enable_dd_node)
 
         # Terminate the block to pad it after scheduling.
         prev_block_duration = self._block_duration
         prev_block_idx = self._current_block_idx
-        self._terminate_block(
-            self._block_duration, self._current_block_idx
-        )
+        self._terminate_block(self._block_duration, self._current_block_idx)
 
         # Edge-case: Add a barrier if the final node is a fast-path
         if self._prev_node in self._fast_path_nodes:
@@ -485,7 +482,7 @@ class BlockBasePadder(TransformationPass):
                     block_dag,
                     pad_wires=not fast_path_node,
                     wire_map=inner_wire_map,
-                    ignore_idle=True
+                    ignore_idle=True,
                 )
             )
 
@@ -521,9 +518,7 @@ class BlockBasePadder(TransformationPass):
         block_idx, t0 = self._node_start_time[node]  # pylint: disable=invalid-name
         # Trigger the end of a block
         if block_idx > self._current_block_idx:
-            self._terminate_block(
-                self._block_duration, self._current_block_idx
-            )
+            self._terminate_block(self._block_duration, self._current_block_idx)
             self._add_block_terminating_barrier(block_idx, t0, node)
 
         self._conditional_block = bool(node.op.condition_bits)
@@ -563,7 +558,7 @@ class BlockBasePadder(TransformationPass):
                 prev_node = next(
                     self._block_dag.predecessors(self._block_dag.output_map[bit])
                 )
-                
+
                 self._pad(
                     block_idx=block_idx,
                     qubit=bit,
@@ -571,7 +566,7 @@ class BlockBasePadder(TransformationPass):
                     t_end=t0,
                     next_node=node,
                     prev_node=prev_node,
-                    enable_dd=enable_dd
+                    enable_dd=enable_dd,
                 )
 
             self._idle_after[bit] = t1
@@ -593,9 +588,7 @@ class BlockBasePadder(TransformationPass):
             }
         )
 
-    def _terminate_block(
-        self, block_duration: int, block_idx: int
-    ) -> None:
+    def _terminate_block(self, block_duration: int, block_idx: int) -> None:
         """Terminate the end of a block scheduling region."""
         # Update all other qubits as not idle so that delays are *not*
         # inserted. This is because we need the delays to be inserted in
@@ -604,9 +597,7 @@ class BlockBasePadder(TransformationPass):
         self._pad_until_block_end(block_duration, block_idx)
         self._idle_after = {bit: 0 for bit in self._block_dag.qubits}
 
-    def _pad_until_block_end(
-        self, block_duration: int, block_idx: int
-    ) -> None:
+    def _pad_until_block_end(self, block_duration: int, block_idx: int) -> None:
         # Add delays until the end of circuit.
         for bit in self._block_dag.qubits:
             if bit in self._idle_qubits:

@@ -123,7 +123,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         alt_spacings: Optional[Union[List[List[float]], List[float]]] = None,
         schedule_idle_qubits: bool = False,
         single_pulses: bool = False,
-        dd_barrier: Optional[str] = None
+        dd_barrier: Optional[str] = None,
     ):
         """Dynamical decoupling initializer.
 
@@ -379,7 +379,7 @@ class PadDynamicalDecoupling(BlockBasePadder):
         t_end: int,
         next_node: DAGNode,
         prev_node: DAGNode,
-        enable_dd: bool=False
+        enable_dd: bool = False,
     ) -> None:
         # This routine takes care of the pulse alignment constraint for the DD sequence.
         # Note that the alignment constraint acts on the t0 of the DAGOpNode.
