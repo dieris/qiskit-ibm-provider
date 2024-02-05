@@ -265,7 +265,10 @@ class BlockBasePadder(TransformationPass):
             cal_key = tuple(indices), tuple(float(p) for p in node.op.params)
             duration = self._block_dag.calibrations[node.op.name][cal_key].duration
         else:
-            duration = self._durations.get(node.op, indices, unit="dt")
+            if getattr(self, "_durations", None):
+                duration = self._durations.get(node.op, indices, unit="dt")
+            else:
+                duration = node.op.duration  # TODO: remap for PadDelay
 
         if isinstance(duration, ParameterExpression):
             raise TranspilerError(
